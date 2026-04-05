@@ -10,16 +10,10 @@ let selectedRole = null;
 
 // Auth Tab Switch //
 function switchAuthTab(tab, e) {
-  // remove active from all buttons
   document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
 
-  // add active ONLY to button (safe way)
-  if (e) {
-    const btn = e.currentTarget;
-    btn.classList.add('active');
-  }
+  if (e) e.currentTarget.classList.add('active');
 
-  // toggle forms
   document.getElementById('login-form').classList.toggle('hidden', tab !== 'login');
   document.getElementById('signup-form').classList.toggle('hidden', tab !== 'signup');
 }
