@@ -102,6 +102,7 @@ async function handleLogin(emailOverride, passwordOverride) {
   try {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
+      let currentUser = null;
     currentUser = data.user;
     await loadProfile(currentUser.id);
   } catch (err) {
