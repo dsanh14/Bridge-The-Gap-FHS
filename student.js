@@ -304,13 +304,13 @@ async function renderSATTracker() {
   const sat = satData || {};
   const scoreList = scores || [];
 
+  let diff = 0;
   let daysLeft = '';
   let hoursLeft = '';
   if (sat.sat_date) {
     const now = new Date();
     const satDate = new Date(sat.sat_date);
-   let diff = 0;
-   if (sat.sat_date) {
+    diff = satDate - now;
     if (diff > 0) {
       daysLeft = Math.floor(diff / (1000 * 60 * 60 * 24));
       hoursLeft = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
