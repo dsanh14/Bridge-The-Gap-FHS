@@ -15,6 +15,7 @@ async function initCounselorApp() {
 }
 
 async function loadCounselorSection(type) {
+  if (typeof trackTabView === 'function') trackTabView('counselor', type);
   const content = document.getElementById('counselor-content');
   content.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><p>Loading...</p></div>';
   switch(type) {
@@ -68,7 +69,7 @@ async function renderCounselorStudents(content) {
     ` : `
       <div class="students-grid">
         ${studentList.map(s => `
-          <div class="student-card card-form" onclick="viewStudentDetail('${s.id}', '${s.name}')">
+          <div class="student-card card-form" onclick='viewStudentDetail(${JSON.stringify(s.id)}, ${JSON.stringify(s.name)})'>
             <div class="student-card-header">
               <span class="student-avatar">🎓</span>
               <div>
@@ -111,7 +112,7 @@ async function viewStudentDetail(studentId, studentName) {
     </div>
 
     <div class="overview-grid">
-      <div class="overview-card green"><div class="overview-icon">✅</div><div class="overview-stat">${statusCounts.finished || 0}</div><div class="overview-label">Scholarships Done</div></div>
+      <div class="overview-card green"><div class="overview-icon">✅</div><div class="overview-stat">${statusCounts.finished || 0}</div><div class="overview-label">Tracked items completed</div></div>
       <div class="overview-card yellow"><div class="overview-icon">🔵</div><div class="overview-stat">${(statusCounts.started || 0) + (statusCounts.in_progress || 0)}</div><div class="overview-label">In Progress</div></div>
       <div class="overview-card red"><div class="overview-icon">❌</div><div class="overview-stat">${statusCounts.deadline_missed || 0}</div><div class="overview-label">Missed</div></div>
       <div class="overview-card green"><div class="overview-icon">📝</div><div class="overview-stat">${scores[0]?.score || 'N/A'}</div><div class="overview-label">Latest SAT Score</div></div>
@@ -132,7 +133,7 @@ async function viewStudentDetail(studentId, studentName) {
             ${c.notes ? `<p>${c.notes}</p>` : ''}
             <div class="counselor-comment-form">
               <textarea id="comment-${c.id}" class="auth-textarea" placeholder="Add your suggestion/comment..." style="height:60px">${c.counselor_comment || ''}</textarea>
-              <button class="track-btn" onclick="saveCounselorComment('${c.id}', '${c.name}')">Save Comment</button>
+              <button class="track-btn" onclick='saveCounselorComment(${JSON.stringify(c.id)}, ${JSON.stringify(c.name)})'>Save Comment</button>
             </div>
           </div>
         `).join('')}

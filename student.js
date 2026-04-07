@@ -32,9 +32,11 @@ function initStudentApp() {
   loadStudentSection('college');
   document.querySelector('[data-tab="college"]').classList.add('active');
   checkScholarshipDeadlines();
+  maybeShowStudentOnboarding();
 }
 
 function loadStudentSection(type) {
+  if (typeof trackTabView === 'function') trackTabView('student', type);
   const content = document.getElementById('content');
   content.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><p>Loading...</p></div>';
 
@@ -81,7 +83,9 @@ function renderOpportunities() {
       allOpportunities = data || [];
       const content = document.getElementById('content');
       content.innerHTML = `
+        <p class="data-freshness-banner" role="status">Opportunities list last updated: <strong>${formatDataListUpdated(typeof OPPORTUNITIES_LIST_UPDATED !== 'undefined' ? OPPORTUNITIES_LIST_UPDATED : '')}</strong>. School staff maintain this sheet—refresh after updates.</p>
         <div class="search-container">
+          <label class="sr-only" for="opp-search">Search opportunities</label>
           <input type="text" id="opp-search" class="search-input" placeholder="Search opportunities by name or category..." />
         </div>
         <div id="opp-results"></div>
@@ -139,7 +143,9 @@ function renderScholarships() {
       allScholarships = data || [];
       const content = document.getElementById('content');
       content.innerHTML = `
+        <p class="data-freshness-banner" role="status">Scholarships list last updated: <strong>${formatDataListUpdated(typeof SCHOLARSHIPS_LIST_UPDATED !== 'undefined' ? SCHOLARSHIPS_LIST_UPDATED : '')}</strong>. School staff maintain this sheet—refresh after updates.</p>
         <div class="search-container">
+          <label class="sr-only" for="sch-search">Search scholarships</label>
           <input type="text" id="sch-search" class="search-input" placeholder="Search scholarships by name..." />
         </div>
         <div id="sch-results"></div>
@@ -268,7 +274,7 @@ async function renderProgress() {
               <input type="date" class="reminder-date-input" value="${item.reminder_date || ''}" 
                 onchange="setProgressReminder('${item.id}', this.value)" />
             </div>
-            ${item.link ? `<a href="${item.link}" target="_blank" class="progress-link">View Scholarship →</a>` : ''}
+            ${item.link ? `<a href="${item.link}" target="_blank" class="progress-link">${item.type === 'opportunity' ? 'View opportunity →' : 'View scholarship →'}</a>` : ''}
           </div>
         `).join('')}
       </div>
@@ -512,7 +518,7 @@ async function renderCollegeResearch() {
 
   content.innerHTML = `
     <div class="section-header">
-      <h2 class="section-title"> College Research</h2>
+      <h2 class="section-title">🏛️ College Research</h2>
       <p class="section-desc">Add colleges you're interested in, rank them, and take notes.</p>
     </div>
 
@@ -841,4 +847,122 @@ function showToast(msg, isError = false) {
   document.body.appendChild(toast);
   setTimeout(() => toast.classList.add('toast-show'), 10);
   setTimeout(() => { toast.classList.remove('toast-show'); setTimeout(() => toast.remove(), 300); }, 3000);
+}
+
+function formatDataListUpdated(value) {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function maybeShowStudentOnboarding() {
+  if (!currentUser) return;
+  if (localStorage.getItem(`hive_onboarding_done_${currentUser.id}`)) return;
+  const m = document.getElementById('student-onboarding');
+  if (!m) return;
+  m.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function dismissStudentOnboarding() {
+  const m = document.getElementById('student-onboarding');
+  if (m) m.classList.add('hidden');
+  document.body.style.overflow = '';
+  if (currentUser) localStorage.setItem(`hive_onboarding_done_${currentUser.id}`, '1');
+}
+
+async function printMeetingSummary() {
+  if (!currentUser || !currentProfile) return;
+  const [progressRes, satRes, scoresRes, collegesRes, todosRes] = await Promise.all([
+    supabase.from('progress').select('*').eq('student_id', currentUser.id).order('created_at', { ascending: false }),
+    supabase.from('sat_tracker').select('*').eq('student_id', currentUser.id).single(),
+    supabase.from('sat_scores').select('*').eq('student_id', currentUser.id).order('created_at', { ascending: false }),
+    supabase.from('college_research').select('*').eq('student_id', currentUser.id).order('rank', { ascending: true }),
+    supabase.from('todos').select('*').eq('student_id', currentUser.id).order('created_at', { ascending: false })
+  ]);
+
+  const progress = progressRes.data || [];
+  const sat = satRes.data || {};
+  const scores = scoresRes.data || [];
+  const colleges = collegesRes.data || [];
+  const todos = todosRes.data || [];
+
+  const statusLabels = {
+    not_started: 'Not started',
+    started: 'Started',
+    in_progress: 'In progress',
+    finished: 'Finished',
+    deadline_missed: 'Deadline missed'
+  };
+
+  const name = escapeHtml(currentProfile.name);
+  const email = escapeHtml(currentProfile.email || '');
+  const generated = new Date().toLocaleString();
+
+  const progressRows = progress.length
+    ? progress.map(p => `<tr><td>${escapeHtml(p.title)}</td><td>${escapeHtml(p.type || '')}</td><td>${escapeHtml(statusLabels[p.status] || p.status || '')}</td><td>${escapeHtml(p.deadline || '—')}</td></tr>`).join('')
+    : '<tr><td colspan="4">No tracked items yet.</td></tr>';
+
+  const scoreRows = scores.length
+    ? scores.map(s => `<tr><td>${escapeHtml(String(s.score))}</td><td>${escapeHtml(new Date(s.test_date || s.created_at).toLocaleDateString())}</td></tr>`).join('')
+    : '<tr><td colspan="2">No practice scores logged.</td></tr>';
+
+  const collegeRows = colleges.length
+    ? colleges.map(c => `<tr><td>${escapeHtml(c.name)}</td><td>${escapeHtml(c.location || '—')}</td><td>${escapeHtml(c.interest || '—')}</td><td>${escapeHtml(c.rank != null ? String(c.rank) : '—')}</td></tr>`).join('')
+    : '<tr><td colspan="4">No colleges added yet.</td></tr>';
+
+  const todoRows = todos.length
+    ? todos.map(t => `<tr><td>${escapeHtml(t.title)}</td><td>${t.completed ? 'Done' : 'Open'}</td><td>${escapeHtml(t.due_date || '—')}</td></tr>`).join('')
+    : '<tr><td colspan="3">No tasks yet.</td></tr>';
+
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/><title>Counselor meeting summary — ${name}</title>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;padding:1.5rem;max-width:900px;margin:0 auto;color:#1a1a1a;line-height:1.5;}
+h1{color:#1e4a1e;font-size:1.35rem;} h2{font-size:1.05rem;margin-top:1.25rem;color:#2c632c;border-bottom:1px solid #e5e7eb;padding-bottom:0.25rem;}
+table{width:100%;border-collapse:collapse;font-size:0.88rem;margin-top:0.5rem;}
+th,td{border:1px solid #e5e7eb;padding:0.45rem 0.5rem;text-align:left;}
+th{background:#f0f4f0;}
+.meta{color:#666;font-size:0.9rem;margin-bottom:1rem;}
+@media print { body{padding:0.5rem;} h1{font-size:1.2rem;} }
+</style></head><body>
+<h1>Counselor meeting summary</h1>
+<p class="meta"><strong>Student:</strong> ${name}<br/><strong>Email:</strong> ${email}<br/><strong>Generated:</strong> ${escapeHtml(generated)}</p>
+
+<h2>SAT</h2>
+<p>Test date: ${escapeHtml(sat.sat_date || 'Not set')} · Goal score: ${sat.goal_score != null ? escapeHtml(String(sat.goal_score)) : 'Not set'} · Confidence: ${escapeHtml((sat.confidence || 'Not set').replace(/_/g, ' '))}</p>
+
+<h2>Tracked scholarships &amp; opportunities</h2>
+<table><thead><tr><th>Title</th><th>Type</th><th>Status</th><th>Deadline</th></tr></thead><tbody>${progressRows}</tbody></table>
+
+<h2>College list</h2>
+<table><thead><tr><th>School</th><th>Location</th><th>Interest</th><th>Rank</th></thead><tbody>${collegeRows}</tbody></table>
+
+<h2>Practice scores</h2>
+<table><thead><tr><th>Score</th><th>Date</th></thead><tbody>${scoreRows}</tbody></table>
+
+<h2>To-do list</h2>
+<table><thead><tr><th>Task</th><th>Status</th><th>Due</th></thead><tbody>${todoRows}</tbody></table>
+
+<p class="meta" style="margin-top:1.5rem;">Printed from The Hive — Franklin High School Resource Hub.</p>
+</body></html>`;
+
+  const w = window.open('', '_blank');
+  if (!w) {
+    showToast('Allow pop-ups to print your summary.', true);
+    return;
+  }
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(() => { try { w.print(); } catch (e) {} }, 300);
 }

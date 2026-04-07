@@ -29,6 +29,7 @@ async function initParentApp() {
 }
 
 async function loadParentSection(type) {
+  if (typeof trackTabView === 'function') trackTabView('parent', type);
   const content = document.getElementById('parent-content');
   content.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><p>Loading...</p></div>';
 
@@ -75,7 +76,7 @@ async function renderParentOverview(content) {
       <div class="overview-card green">
         <div class="overview-icon">💰</div>
         <div class="overview-stat">${finished}</div>
-        <div class="overview-label">Scholarships Finished</div>
+        <div class="overview-label">Tracked items completed</div>
       </div>
       <div class="overview-card yellow">
         <div class="overview-icon">🔵</div>
@@ -131,7 +132,7 @@ async function renderParentScholarships(content) {
       <h2 class="section-title">💰 Scholarship & Opportunity Progress</h2>
       <p class="section-desc">Read-only view of ${linkedStudent.name}'s tracker.</p>
     </div>
-    ${items.length === 0 ? '<div class="empty-state"><div class="empty-icon">💰</div><h3>No items tracked yet.</h3></div>' : ''}
+    ${items.length === 0 ? '<div class="empty-state"><div class="empty-icon">💰</div><h3>No items tracked yet.</h3></div>' : `
     <div class="progress-grid">
       ${items.map(item => `
         <div class="progress-card" style="border-left: 5px solid ${statusColors[item.status] || '#94a3b8'}">
@@ -142,6 +143,7 @@ async function renderParentScholarships(content) {
         </div>
       `).join('')}
     </div>
+    `}
   `;
 }
 
@@ -202,7 +204,7 @@ async function renderParentColleges(content) {
     <div class="section-header">
       <h2 class="section-title">🏛️ College Research — ${linkedStudent.name}</h2>
     </div>
-    ${colleges.length === 0 ? '<div class="empty-state"><div class="empty-icon">🏛️</div><h3>No colleges added yet.</h3></div>' : ''}
+    ${colleges.length === 0 ? '<div class="empty-state"><div class="empty-icon">🏛️</div><h3>No colleges added yet.</h3></div>' : `
     <div id="college-list">
       ${colleges.map(c => `
         <div class="college-card">
@@ -220,6 +222,7 @@ async function renderParentColleges(content) {
         </div>
       `).join('')}
     </div>
+    `}
   `;
 }
 
@@ -233,7 +236,7 @@ async function renderParentTodo(content) {
       <h2 class="section-title">✅ To-Do List — ${linkedStudent.name}</h2>
       <p class="section-desc">Read-only view of your student's tasks.</p>
     </div>
-    ${todos.length === 0 ? '<div class="empty-state"><div class="empty-icon">✅</div><h3>No tasks yet.</h3></div>' : ''}
+    ${todos.length === 0 ? '<div class="empty-state"><div class="empty-icon">✅</div><h3>No tasks yet.</h3></div>' : `
     <div class="todo-list">
       ${todos.map(t => `
         <div class="todo-item ${t.completed ? 'todo-done' : ''}">
@@ -246,6 +249,7 @@ async function renderParentTodo(content) {
         </div>
       `).join('')}
     </div>
+    `}
   `;
 }
 

@@ -16,6 +16,11 @@ function switchAuthTab(tab, e) {
 
   document.getElementById('login-form').classList.toggle('hidden', tab !== 'login');
   document.getElementById('signup-form').classList.toggle('hidden', tab !== 'signup');
+
+  const loginErr = document.getElementById('login-error');
+  const signupErr = document.getElementById('signup-error');
+  if (loginErr) { loginErr.textContent = ''; loginErr.style.color = ''; }
+  if (signupErr) { signupErr.textContent = ''; signupErr.style.color = ''; }
 }
 
 // Role Selection //
@@ -38,6 +43,7 @@ async function handleSignup() {
   const password = document.getElementById('signup-password').value;
   const name = document.getElementById('signup-name').value.trim();
   const errorEl = document.getElementById('signup-error');
+  errorEl.style.color = '';
 
   if (!email || !password || !name || !selectedRole) {
     errorEl.textContent = 'Please fill in all fields and select a role.';
@@ -98,6 +104,7 @@ async function handleLogin(emailOverride, passwordOverride) {
   const email = emailOverride || document.getElementById('login-email').value.trim();
   const password = passwordOverride || document.getElementById('login-password').value;
   const errorEl = document.getElementById('login-error');
+  if (errorEl) errorEl.style.color = '';
 
   try {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -111,13 +118,40 @@ async function handleLogin(emailOverride, passwordOverride) {
 
 // Load Profile & Route //
 async function loadProfile(userId) {
+  const errBanner = document.getElementById('auth-profile-error');
+  if (errBanner) errBanner.classList.add('hidden');
+
   const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
   if (error || !data) {
     console.error('Profile not found:', error);
+    document.getElementById('app').classList.add('hidden');
+    document.getElementById('auth-screen').classList.remove('hidden');
+    if (errBanner) errBanner.classList.remove('hidden');
     return;
   }
   currentProfile = data;
   routeToApp(data.role);
+}
+
+async function handleAuthProfileErrorSignOut() {
+  await supabase.auth.signOut();
+  currentUser = null;
+  currentProfile = null;
+  location.reload();
+}
+
+function openPrivacyModal() {
+  const m = document.getElementById('privacy-modal');
+  if (!m) return;
+  m.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function closePrivacyModal() {
+  const m = document.getElementById('privacy-modal');
+  if (!m) return;
+  m.classList.add('hidden');
+  document.body.style.overflow = '';
 }
 
 // Route to correct dashboard //
@@ -128,7 +162,10 @@ function routeToApp(role) {
   if (role === 'student') {
     document.getElementById('student-app').classList.remove('hidden');
     document.getElementById('student-welcome').textContent = `Welcome, ${currentProfile.name} 👋`;
-    document.getElementById('student-code-display').textContent = `Your Code: ${currentProfile.student_code}`;
+    const codeEl = document.getElementById('student-code-display');
+    const code = currentProfile.student_code;
+    codeEl.textContent = code ? `Your Code: ${code}` : '';
+    codeEl.classList.toggle('hidden', !code);
     initStudentApp();
   } else if (role === 'parent') {
     document.getElementById('parent-app').classList.remove('hidden');
@@ -151,6 +188,19 @@ async function signOut() {
 
 // Check session on load//
 window.addEventListener('DOMContentLoaded', async () => {
+  const pilot = document.getElementById('pilot-mail-link');
+  if (pilot && typeof PILOT_CONTACT_EMAIL !== 'undefined') {
+    pilot.href = `mailto:${PILOT_CONTACT_EMAIL}?subject=${encodeURIComponent('The Hive — school pilot interest')}`;
+  }
+
+  document.getElementById('privacy-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'privacy-modal') closePrivacyModal();
+  });
+
+  document.getElementById('student-onboarding')?.addEventListener('click', (e) => {
+    if (e.target.id === 'student-onboarding' && typeof dismissStudentOnboarding === 'function') dismissStudentOnboarding();
+  });
+
   const { data: { session } } = await supabase.auth.getSession();
   if (session) {
     currentUser = session.user;
