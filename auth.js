@@ -201,6 +201,15 @@ window.addEventListener('DOMContentLoaded', async () => {
     if (e.target.id === 'student-onboarding' && typeof dismissStudentOnboarding === 'function') dismissStudentOnboarding();
   });
 
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    closePrivacyModal();
+    if (typeof dismissStudentOnboarding === 'function') {
+      const ob = document.getElementById('student-onboarding');
+      if (ob && !ob.classList.contains('hidden')) dismissStudentOnboarding();
+    }
+  });
+
   const { data: { session } } = await supabase.auth.getSession();
   if (session) {
     currentUser = session.user;
