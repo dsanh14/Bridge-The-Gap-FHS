@@ -885,7 +885,7 @@ async function printMeetingSummary() {
   if (!currentUser || !currentProfile) return;
   const [progressRes, satRes, scoresRes, collegesRes, todosRes] = await Promise.all([
     supabase.from('progress').select('*').eq('student_id', currentUser.id).order('created_at', { ascending: false }),
-    supabase.from('sat_tracker').select('*').eq('student_id', currentUser.id).single(),
+    supabase.from('sat_tracker').select('*').eq('student_id', currentUser.id).maybeSingle(),
     supabase.from('sat_scores').select('*').eq('student_id', currentUser.id).order('created_at', { ascending: false }),
     supabase.from('college_research').select('*').eq('student_id', currentUser.id).order('rank', { ascending: true }),
     supabase.from('todos').select('*').eq('student_id', currentUser.id).order('created_at', { ascending: false })
