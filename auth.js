@@ -7,15 +7,26 @@ emailjs.init(EMAILJS_PUBLIC_KEY);
 let currentUser = null;
 let currentProfile = null;
 let selectedRole = null;
+let intentionalSignOut = false;
 
 // Auth Tab Switch //
 function switchAuthTab(tab, e) {
-  document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.auth-tab').forEach(t => {
+    t.classList.remove('active');
+    t.setAttribute('aria-selected', 'false');
+  });
+  if (e) {
+    e.currentTarget.classList.add('active');
+    e.currentTarget.setAttribute('aria-selected', 'true');
+  }
 
-  if (e) e.currentTarget.classList.add('active');
-
-  document.getElementById('login-form').classList.toggle('hidden', tab !== 'login');
-  document.getElementById('signup-form').classList.toggle('hidden', tab !== 'signup');
+  const loginForm = document.getElementById('login-form');
+  const signupForm = document.getElementById('signup-form');
+  const showLogin = tab === 'login';
+  loginForm.classList.toggle('hidden', !showLogin);
+  signupForm.classList.toggle('hidden', showLogin);
+  loginForm.setAttribute('aria-hidden', showLogin ? 'false' : 'true');
+  signupForm.setAttribute('aria-hidden', showLogin ? 'true' : 'false');
 
   const loginErr = document.getElementById('login-error');
   const signupErr = document.getElementById('signup-error');
@@ -26,8 +37,13 @@ function switchAuthTab(tab, e) {
 // Role Selection //
 function selectRole(role) {
   selectedRole = role;
-  document.querySelectorAll('.role-option').forEach(o => o.classList.remove('active'));
-  document.querySelector(`[data-role="${role}"]`).classList.add('active');
+  document.querySelectorAll('.role-option').forEach(o => {
+    o.classList.remove('active');
+    o.setAttribute('aria-pressed', 'false');
+  });
+  const el = document.querySelector(`[data-role="${role}"]`);
+  el.classList.add('active');
+  el.setAttribute('aria-pressed', 'true');
   document.querySelectorAll('.role-fields').forEach(f => f.classList.add('hidden'));
   document.getElementById(`${role}-fields`).classList.remove('hidden');
 }
@@ -219,10 +235,45 @@ function routeToApp(role) {
 
 // Sign Out //
 async function signOut() {
+  intentionalSignOut = true;
   await supabase.auth.signOut();
   currentUser = null;
   currentProfile = null;
   location.reload();
+}
+
+function showSessionExpiredModal() {
+  const m = document.getElementById('session-expired-modal');
+  if (!m) {
+    location.reload();
+    return;
+  }
+  m.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeSessionExpiredModal() {
+  const m = document.getElementById('session-expired-modal');
+  if (!m) return;
+  m.classList.add('hidden');
+  document.body.style.overflow = '';
+  location.reload();
+}
+
+function initOfflineBanner() {
+  const el = document.getElementById('offline-banner');
+  if (!el) return;
+  const sync = () => {
+    el.classList.toggle('hidden', navigator.onLine);
+  };
+  window.addEventListener('online', sync);
+  window.addEventListener('offline', sync);
+  sync();
+}
+
+function registerHiveServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 
 // Check session on load//
@@ -236,9 +287,16 @@ window.addEventListener('DOMContentLoaded', async () => {
     if (e.target.id === 'privacy-modal') closePrivacyModal();
   });
 
+  document.getElementById('session-expired-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'session-expired-modal') closeSessionExpiredModal();
+  });
+
   document.getElementById('student-onboarding')?.addEventListener('click', (e) => {
     if (e.target.id === 'student-onboarding' && typeof dismissStudentOnboarding === 'function') dismissStudentOnboarding();
   });
+
+  document.getElementById('login-form')?.setAttribute('aria-hidden', 'false');
+  document.getElementById('signup-form')?.setAttribute('aria-hidden', 'true');
 
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
@@ -254,4 +312,17 @@ window.addEventListener('DOMContentLoaded', async () => {
     currentUser = session.user;
     await loadProfile(currentUser.id);
   }
+
+  initOfflineBanner();
+  registerHiveServiceWorker();
+
+  supabase.auth.onAuthStateChange((event, sess) => {
+    if (event !== 'SIGNED_OUT' || sess) return;
+    if (intentionalSignOut) return;
+    const app = document.getElementById('app');
+    const authScreen = document.getElementById('auth-screen');
+    if (app && !app.classList.contains('hidden') && authScreen && authScreen.classList.contains('hidden')) {
+      showSessionExpiredModal();
+    }
+  });
 });

@@ -3,21 +3,41 @@
 // 
 async function initCounselorApp() {
   const buttons = document.querySelectorAll('#counselor-app .tab-btn');
+
+  const activateTab = async (tab, { skipHash } = {}) => {
+    buttons.forEach(b => {
+      b.classList.remove('active');
+      b.removeAttribute('aria-current');
+    });
+    const el = document.querySelector(`#counselor-app [data-tab="${tab}"]`);
+    if (el) {
+      el.classList.add('active');
+      el.setAttribute('aria-current', 'true');
+    }
+    if (!skipHash) setAppHash('counselor', tab);
+    await loadCounselorSection(tab);
+  };
+
   buttons.forEach(btn => {
     btn.addEventListener('click', () => {
-      buttons.forEach(b => {
-        b.classList.remove('active');
-        b.removeAttribute('aria-current');
-      });
-      btn.classList.add('active');
-      btn.setAttribute('aria-current', 'true');
-      loadCounselorSection(btn.dataset.tab);
+      const tab = btn.dataset.tab;
+      if (document.querySelector('#counselor-app .tab-btn.active')?.dataset.tab === tab) return;
+      void activateTab(tab);
     });
   });
-  loadCounselorSection('counselor-students');
-  const firstTab = document.querySelector('#counselor-app [data-tab="counselor-students"]');
-  firstTab.classList.add('active');
-  firstTab.setAttribute('aria-current', 'true');
+
+  window.addEventListener('hashchange', () => {
+    const h = getAppHash();
+    if (!h || h.role !== 'counselor' || !APP_TABS.counselor.has(h.tab)) return;
+    const cur = document.querySelector('#counselor-app .tab-btn.active');
+    if (cur && cur.dataset.tab === h.tab) return;
+    void activateTab(h.tab, { skipHash: true });
+  });
+
+  const startTab = resolveStartTab('counselor', 'counselor-students');
+  const expectedHash = `#counselor/${encodeURIComponent(startTab)}`;
+  await activateTab(startTab, { skipHash: location.hash === expectedHash });
+
   bindTablistKeyboard('#counselor-app');
 }
 
@@ -87,7 +107,7 @@ async function printCounselorStudentSummary(studentId, studentName) {
 async function loadCounselorSection(type) {
   if (typeof trackTabView === 'function') trackTabView('counselor', type);
   const content = document.getElementById('counselor-content');
-  content.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><p>Loading...</p></div>';
+  content.innerHTML = loadingMarkup('Loading…');
   switch(type) {
     case 'counselor-students': await renderCounselorStudents(content); break;
     case 'counselor-scholarships': await renderCounselorScholarships(content); break;
@@ -122,9 +142,9 @@ async function renderCounselorStudents(content) {
         ${notifs.map(n => `
           <div class="notif-item">
             <span class="notif-type">${n.type === 'meeting_request' ? '📅 Meeting Request' : '📨 LOR Request'}</span>
-            <strong>${n.student_name}</strong> — ${n.message || ''}
-            <span class="notif-date">${new Date(n.created_at).toLocaleDateString()}</span>
-            <a href="mailto:${n.student_email}" class="track-btn">Reply</a>
+            <strong>${escapeHtml(n.student_name || '')}</strong> — ${escapeHtml(n.message || '')}
+            <span class="notif-date">${escapeHtml(new Date(n.created_at).toLocaleDateString())}</span>
+            <a href="mailto:${escapeAttr((n.student_email || '').trim())}" class="track-btn">Reply</a>
           </div>
         `).join('')}
       </div>
@@ -141,14 +161,14 @@ async function renderCounselorStudents(content) {
         ${studentList.map(s => `
           <div class="student-card card-form" onclick='viewStudentDetail(${JSON.stringify(s.id)}, ${JSON.stringify(s.name)})'>
             <div class="student-card-header">
-              <span class="student-avatar">🎓</span>
+              <span class="student-avatar" aria-hidden="true">🎓</span>
               <div>
-                <h3>${s.name}</h3>
-                <p>${s.email}</p>
-                <p>Grade: ${s.grade_level || 'N/A'} | ID: ${s.student_id || 'N/A'}</p>
+                <h3>${escapeHtml(s.name)}</h3>
+                <p>${escapeHtml(s.email || '')}</p>
+                <p>Grade: ${escapeHtml(s.grade_level || 'N/A')} | ID: ${escapeHtml(s.student_id || 'N/A')}</p>
               </div>
             </div>
-            <button class="save-btn" style="margin-top:1rem">View Progress →</button>
+            <button type="button" class="save-btn" style="margin-top:1rem">View Progress →</button>
           </div>
         `).join('')}
       </div>
@@ -172,44 +192,64 @@ async function viewStudentDetail(studentId, studentName) {
   const colleges = collegesRes.data || [];
   const todos = todosRes.data || [];
 
+  const collegesWithLogos = await Promise.all(
+    colleges.map(async (c) => ({
+      ...c,
+      _logoDisplaySrc: c.logo_url ? await resolveCollegeLogoDisplayUrl(c.logo_url) : ''
+    }))
+  );
+
   const statusCounts = {};
   progress.forEach(p => { statusCounts[p.status] = (statusCounts[p.status] || 0) + 1; });
 
+  const sn = escapeHtml(studentName);
   content.innerHTML = `
     <div class="counselor-detail-toolbar">
       <button type="button" class="back-btn" onclick="loadCounselorSection('counselor-students')">← Back to Students</button>
       <button type="button" class="save-btn" onclick='printCounselorStudentSummary(${JSON.stringify(studentId)}, ${JSON.stringify(studentName)})'>Print student summary</button>
     </div>
     <div class="section-header">
-      <h2 class="section-title">📊 ${studentName}'s Dashboard</h2>
+      <h2 class="section-title">📊 ${sn}'s Dashboard</h2>
     </div>
 
     <div class="overview-grid">
       <div class="overview-card green"><div class="overview-icon">✅</div><div class="overview-stat">${statusCounts.finished || 0}</div><div class="overview-label">Tracked items completed</div></div>
       <div class="overview-card yellow"><div class="overview-icon">🔵</div><div class="overview-stat">${(statusCounts.started || 0) + (statusCounts.in_progress || 0)}</div><div class="overview-label">In Progress</div></div>
       <div class="overview-card red"><div class="overview-icon">❌</div><div class="overview-stat">${statusCounts.deadline_missed || 0}</div><div class="overview-label">Missed</div></div>
-      <div class="overview-card green"><div class="overview-icon">📝</div><div class="overview-stat">${scores[0]?.score || 'N/A'}</div><div class="overview-label">Latest SAT Score</div></div>
-      <div class="overview-card yellow"><div class="overview-icon">🎯</div><div class="overview-stat">${sat.goal_score || 'N/A'}</div><div class="overview-label">SAT Goal</div></div>
-      <div class="overview-card green"><div class="overview-icon">🏛️</div><div class="overview-stat">${colleges.length}</div><div class="overview-label">Colleges Researched</div></div>
+      <div class="overview-card green"><div class="overview-icon">📝</div><div class="overview-stat">${scores[0]?.score ?? 'N/A'}</div><div class="overview-label">Latest SAT Score</div></div>
+      <div class="overview-card yellow"><div class="overview-icon">🎯</div><div class="overview-stat">${sat.goal_score != null ? escapeHtml(String(sat.goal_score)) : 'N/A'}</div><div class="overview-label">SAT Goal</div></div>
+      <div class="overview-card green"><div class="overview-icon">🏛️</div><div class="overview-stat">${collegesWithLogos.length}</div><div class="overview-label">Colleges Researched</div></div>
     </div>
 
     <!-- College Research with counselor comments -->
-    ${colleges.length > 0 ? `
+    ${collegesWithLogos.length > 0 ? `
       <div class="card-form" style="margin-top:2rem">
         <h3>🏛️ College Research</h3>
-        ${colleges.map(c => `
-          <div class="college-card">
+        ${collegesWithLogos.map(c => {
+          const imgSrc = (c._logoDisplaySrc && safeHttpUrl(c._logoDisplaySrc)) || safeHttpUrl(c.logo_url);
+          return `
+          <div class="college-card college-card--with-logo">
+            <div class="college-card-top">
+              <div class="college-logo-cell" aria-hidden="true">
+                ${imgSrc
+    ? `<img class="college-logo-img" src="${escapeAttr(imgSrc)}" alt="" loading="lazy"/>`
+    : `<div class="college-logo-placeholder"><span aria-hidden="true">🏛️</span></div>`}
+              </div>
+              <div class="college-card-main">
             <div class="college-card-header">
-              <div><h3>${c.name}</h3>${c.location ? `<p>📍 ${c.location}</p>` : ''}</div>
-              ${c.rank ? `<span class="rank-badge">#${c.rank}</span>` : ''}
+              <div><h3>${escapeHtml(c.name)}</h3>${c.location ? `<p>📍 ${escapeHtml(c.location)}</p>` : ''}</div>
+              ${c.rank != null ? `<span class="rank-badge">#${escapeHtml(String(c.rank))}</span>` : ''}
             </div>
-            ${c.notes ? `<p>${c.notes}</p>` : ''}
+            ${c.notes ? `<p>${escapeHtml(c.notes)}</p>` : ''}
             <div class="counselor-comment-form">
-              <textarea id="comment-${c.id}" class="auth-textarea" placeholder="Add your suggestion/comment..." style="height:60px">${c.counselor_comment || ''}</textarea>
-              <button class="track-btn" onclick='saveCounselorComment(${JSON.stringify(c.id)}, ${JSON.stringify(c.name)})'>Save Comment</button>
+              <textarea id="comment-${c.id}" class="auth-textarea" placeholder="Add your suggestion/comment..." style="height:60px">${escapeHtml(c.counselor_comment || '')}</textarea>
+              <button type="button" class="track-btn" onclick='saveCounselorComment(${JSON.stringify(c.id)}, ${JSON.stringify(c.name)})'>Save Comment</button>
+            </div>
+              </div>
             </div>
           </div>
-        `).join('')}
+        `;
+        }).join('')}
       </div>
     ` : ''}
 
@@ -220,10 +260,10 @@ async function viewStudentDetail(studentId, studentName) {
         <div class="progress-grid">
           ${progress.map(item => `
             <div class="progress-card">
-              <h3>${item.title}</h3>
-              ${item.deadline ? `<p>📅 ${item.deadline}</p>` : ''}
-              <p><strong>Status:</strong> ${item.status.replace(/_/g,' ')}</p>
-              <p><small>Applicants with same scholarship: <span class="applicant-count" data-title="${item.title}">Loading...</span></small></p>
+              <h3>${escapeHtml(item.title)}</h3>
+              ${item.deadline ? `<p>📅 ${escapeHtml(item.deadline)}</p>` : ''}
+              <p><strong>Status:</strong> ${escapeHtml(item.status.replace(/_/g,' '))}</p>
+              <p><small>Applicants with same scholarship: <span class="applicant-count" id="app-count-${item.id}">…</span></small></p>
             </div>
           `).join('')}
         </div>
@@ -231,12 +271,13 @@ async function viewStudentDetail(studentId, studentName) {
     ` : ''}
   `;
 
-  // Load applicant counts
   const uniqueTitles = [...new Set(progress.map(p => p.title))];
   for (const title of uniqueTitles) {
     const { count } = await supabase.from('progress').select('*', { count: 'exact' }).eq('title', title);
-    document.querySelectorAll(`[data-title="${title}"]`).forEach(el => {
-      el.textContent = count || 0;
+    progress.forEach(p => {
+      if (p.title !== title) return;
+      const el = document.getElementById(`app-count-${p.id}`);
+      if (el) el.textContent = count ?? 0;
     });
   }
 }
@@ -253,8 +294,10 @@ async function renderCounselorScholarships(content) {
     .select('*').order('created_at', { ascending: false });
 
   content.innerHTML = `
-    <div class="section-header">
-      <h2 class="section-title">💰 Manage Scholarships</h2>
+    <div class="listing-page">
+    <div class="section-header listing-page-header">
+      <h2 class="section-title">Manage scholarships</h2>
+      <p class="section-desc">Add awards for students. Lists in the student app are maintained separately—coordinate with staff for visibility.</p>
     </div>
     <div class="add-college-form card-form">
       <h3>➕ Add Scholarship</h3>
@@ -268,21 +311,25 @@ async function renderCounselorScholarships(content) {
       </div>
       <button class="save-btn" onclick="addCounselorScholarship()">Add Scholarship</button>
     </div>
-    <div id="counselor-sch-list">
-      ${(existing || []).map(s => `
-        <div class="resource-card">
-          <div class="card-info">
-            <h3>${s.name}</h3>
-            <p>${s.description || ''}</p>
-            <ul>
-              ${s.deadline ? `<li><strong>Deadline:</strong> ${s.deadline}</li>` : ''}
-              ${s.grade_level ? `<li><strong>Grade:</strong> ${s.grade_level}</li>` : ''}
-              ${s.area ? `<li><strong>Area:</strong> ${s.area}</li>` : ''}
+    <div id="counselor-sch-list" class="listing-results counselor-manage-grid">
+      ${(existing || []).map(s => {
+        const sl = safeHttpUrl(s.link);
+        return `
+        <article class="data-card counselor-manage-card">
+          <div class="data-card-body">
+            <h3 class="data-card-title">${escapeHtml(s.name)}</h3>
+            <p class="data-card-text">${escapeHtml(s.description || '')}</p>
+            <ul class="counselor-manage-meta">
+              ${s.deadline ? `<li><strong>Deadline:</strong> ${escapeHtml(s.deadline)}</li>` : ''}
+              ${s.grade_level ? `<li><strong>Grade:</strong> ${escapeHtml(s.grade_level)}</li>` : ''}
+              ${s.area ? `<li><strong>Area:</strong> ${escapeHtml(s.area)}</li>` : ''}
             </ul>
-            ${s.link ? `<a href="${s.link}" target="_blank">View</a>` : ''}
+            ${sl ? `<a class="data-card-btn data-card-btn--primary" href="${escapeAttr(sl)}" target="_blank" rel="noopener noreferrer">View</a>` : ''}
           </div>
-        </div>
-      `).join('')}
+        </article>
+      `;
+      }).join('')}
+    </div>
     </div>
   `;
 }
@@ -310,8 +357,10 @@ async function renderCounselorOpportunities(content) {
     .select('*').order('created_at', { ascending: false });
 
   content.innerHTML = `
-    <div class="section-header">
-      <h2 class="section-title">🌟 Manage Opportunities</h2>
+    <div class="listing-page">
+    <div class="section-header listing-page-header">
+      <h2 class="section-title">Manage opportunities</h2>
+      <p class="section-desc">Programs and events you want highlighted for students.</p>
     </div>
     <div class="add-college-form card-form">
       <h3>➕ Add Opportunity</h3>
@@ -325,21 +374,25 @@ async function renderCounselorOpportunities(content) {
       </div>
       <button class="save-btn" onclick="addCounselorOpportunity()">Add Opportunity</button>
     </div>
-    <div>
-      ${(existing || []).map(o => `
-        <div class="resource-card">
-          <div class="card-info">
-            <h3>${o.name}</h3>
-            <p>${o.description || ''}</p>
-            <ul>
-              ${o.date ? `<li><strong>Date:</strong> ${o.date}</li>` : ''}
-              ${o.grade_level ? `<li><strong>Grade:</strong> ${o.grade_level}</li>` : ''}
-              ${o.category ? `<li><strong>Category:</strong> ${o.category}</li>` : ''}
+    <div class="listing-results counselor-manage-grid">
+      ${(existing || []).map(o => {
+        const ol = safeHttpUrl(o.link);
+        return `
+        <article class="data-card counselor-manage-card">
+          <div class="data-card-body">
+            <h3 class="data-card-title">${escapeHtml(o.name)}</h3>
+            <p class="data-card-text">${escapeHtml(o.description || '')}</p>
+            <ul class="counselor-manage-meta">
+              ${o.date ? `<li><strong>Date:</strong> ${escapeHtml(o.date)}</li>` : ''}
+              ${o.grade_level ? `<li><strong>Grade:</strong> ${escapeHtml(o.grade_level)}</li>` : ''}
+              ${o.category ? `<li><strong>Category:</strong> ${escapeHtml(o.category)}</li>` : ''}
             </ul>
-            ${o.link ? `<a href="${o.link}" target="_blank">View</a>` : ''}
+            ${ol ? `<a class="data-card-btn data-card-btn--primary" href="${escapeAttr(ol)}" target="_blank" rel="noopener noreferrer">View</a>` : ''}
           </div>
-        </div>
-      `).join('')}
+        </article>
+      `;
+      }).join('')}
+    </div>
     </div>
   `;
 }
@@ -403,7 +456,7 @@ async function renderCounselorTranscript(content) {
       <h3>Upload a student's transcript</h3>
       <select id="transcript-student" class="status-select">
         <option value="">Select student...</option>
-        ${(students || []).map(s => `<option value="${s.id}">${s.name} (${s.email})</option>`).join('')}
+        ${(students || []).map(s => `<option value="${escapeAttr(s.id)}">${escapeHtml(s.name)} (${escapeHtml(s.email || '')})</option>`).join('')}
       </select>
       <div class="file-upload-area" style="margin-top:1rem">
         <label>📎 Upload Transcript PDF:</label>
@@ -457,11 +510,11 @@ async function renderCounselorReminders(content) {
         <div class="notif-item card-form" style="margin-bottom:1rem">
           <div class="notif-header">
             <span class="notif-type">${n.type === 'meeting_request' ? '📅 Meeting Request' : '📨 Request'}</span>
-            <span class="notif-date">${new Date(n.created_at).toLocaleDateString()}</span>
+            <span class="notif-date">${escapeHtml(new Date(n.created_at).toLocaleDateString())}</span>
           </div>
-          <strong>${n.student_name}</strong> (${n.student_email})
-          <p>${n.message || ''}</p>
-          <a href="mailto:${n.student_email}" class="save-btn" style="display:inline-block">Reply via Email</a>
+          <strong>${escapeHtml(n.student_name || '')}</strong> (${escapeHtml(n.student_email || '')})
+          <p>${escapeHtml(n.message || '')}</p>
+          <a href="mailto:${escapeAttr((n.student_email || '').trim())}" class="save-btn" style="display:inline-block">Reply via Email</a>
         </div>
       `).join('')}
     </div>
